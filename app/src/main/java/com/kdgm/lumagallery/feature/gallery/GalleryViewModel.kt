@@ -2,8 +2,8 @@ package com.kdgm.lumagallery.feature.gallery
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.kdgm.lumagallery.core.media.ImageMedia
 import com.kdgm.lumagallery.data.repository.ImageRepository
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,11 +21,13 @@ class GalleryViewModel(
     val uiState: StateFlow<GalleryUiState> =
         _uiState.asStateFlow()
 
+    private var hasRetriedAfterPermission = false
+
     init {
         loadImages()
     }
 
-    private fun loadImages() {
+    fun loadImages() {
         viewModelScope.launch {
             imageRepository.getImages()
                 .onStart {
@@ -40,6 +42,16 @@ class GalleryViewModel(
                         )
                 }
                 .collect { images ->
+
+                    // 🔥 KEY FIX: handle first permission race condition
+                    if (images.isEmpty() && !hasRetriedAfterPermission) {
+                        hasRetriedAfterPermission = true
+
+                        delay(400) // allow MediaStore to stabilize
+                        loadImages()
+                        return@collect
+                    }
+
                     _uiState.value =
                         GalleryUiState(
                             isLoading = false,
@@ -49,13 +61,7 @@ class GalleryViewModel(
         }
     }
 
-    fun getImageAt(index: Int): ImageMedia? {
-        return _uiState.value.images.getOrNull(index)
-    }
-
-    fun getImages(): List<ImageMedia> {
-        return _uiState.value.images
-    }
+    fun getImages() = _uiState.value.images
 
 
 }
