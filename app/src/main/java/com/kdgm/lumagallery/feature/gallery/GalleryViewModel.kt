@@ -2,6 +2,7 @@ package com.kdgm.lumagallery.feature.gallery
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.kdgm.lumagallery.core.media.ImageMedia
 import com.kdgm.lumagallery.data.repository.ImageRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -14,8 +15,11 @@ class GalleryViewModel(
     private val imageRepository: ImageRepository
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(GalleryUiState())
-    val uiState: StateFlow<GalleryUiState> = _uiState.asStateFlow()
+    private val _uiState =
+        MutableStateFlow(GalleryUiState())
+
+    val uiState: StateFlow<GalleryUiState> =
+        _uiState.asStateFlow()
 
     init {
         loadImages()
@@ -25,21 +29,34 @@ class GalleryViewModel(
         viewModelScope.launch {
             imageRepository.getImages()
                 .onStart {
-                    _uiState.value = _uiState.value.copy(isLoading = true)
+                    _uiState.value =
+                        _uiState.value.copy(isLoading = true)
                 }
-                .catch { throwable ->
-                    _uiState.value = GalleryUiState(
-                        isLoading = false,
-                        error = throwable.message
-                    )
+                .catch { error ->
+                    _uiState.value =
+                        GalleryUiState(
+                            isLoading = false,
+                            error = error.message
+                        )
                 }
                 .collect { images ->
-                    _uiState.value = GalleryUiState(
-                        isLoading = false,
-                        images = images
-                    )
+                    _uiState.value =
+                        GalleryUiState(
+                            isLoading = false,
+                            images = images
+                        )
                 }
         }
     }
+
+    fun getImageAt(index: Int): ImageMedia? {
+        return _uiState.value.images.getOrNull(index)
+    }
+
+    fun getImages(): List<ImageMedia> {
+        return _uiState.value.images
+    }
+
+
 }
 

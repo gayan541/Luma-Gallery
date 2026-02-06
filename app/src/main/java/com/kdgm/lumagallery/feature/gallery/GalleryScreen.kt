@@ -13,27 +13,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
-import com.kdgm.lumagallery.data.datasource.MediaStoreImageDataSource
-import com.kdgm.lumagallery.data.repository.ImageRepositoryImpl
 import kotlinx.coroutines.launch
 
 @Composable
 fun GalleryScreen(
+    viewModel: GalleryViewModel,
     onImageOpen: (Int) -> Unit
 ) {
 
-    val context = LocalContext.current
     val gridState = rememberLazyGridState()
     val coroutineScope = rememberCoroutineScope()
-
-    val viewModel = remember {
-        GalleryViewModel(
-            ImageRepositoryImpl(
-                MediaStoreImageDataSource(context)
-            )
-        )
-    }
 
     val state by viewModel.uiState.collectAsState()
 
