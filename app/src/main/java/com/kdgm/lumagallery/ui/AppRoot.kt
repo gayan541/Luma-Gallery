@@ -60,7 +60,10 @@ fun AppRoot() {
 
             ViewerScreen(
                 images = galleryViewModel.getImages(),
-                startIndex = index
+                startIndex = index,
+                onExit = {
+                    navController.popBackStack()
+                }
             )
         }
     }
