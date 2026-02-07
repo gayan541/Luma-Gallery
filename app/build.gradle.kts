@@ -40,6 +40,8 @@ android {
 dependencies {
     implementation(libs.navigation.compose)
     implementation(libs.coil.compose)
+    implementation(libs.material.icons.core)
+    implementation(libs.material.icons.extended)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

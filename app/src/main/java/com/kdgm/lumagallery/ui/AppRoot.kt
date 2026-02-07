@@ -12,12 +12,11 @@ import androidx.navigation.navArgument
 import com.kdgm.lumagallery.core.permissions.MediaPermissionManager
 import com.kdgm.lumagallery.data.datasource.MediaStoreImageDataSource
 import com.kdgm.lumagallery.data.repository.ImageRepositoryImpl
-import com.kdgm.lumagallery.feature.gallery.GalleryScreen
+import com.kdgm.lumagallery.feature.gallery.GalleryTabsScreen
 import com.kdgm.lumagallery.feature.gallery.GalleryViewModel
-import com.kdgm.lumagallery.feature.permission.PermissionScreen
 import com.kdgm.lumagallery.feature.viewer.ViewerScreen
+import com.kdgm.lumagallery.feature.gallery.AlbumImagesScreen
 import com.kdgm.lumagallery.ui.navigation.AppDestination
-import com.kdgm.lumagallery.ui.navigation.AppStartDestination
 
 @Composable
 fun AppRoot() {
@@ -27,16 +26,6 @@ fun AppRoot() {
 
     val permissionManager = remember {
         MediaPermissionManager(context)
-    }
-
-    val startDestination by remember {
-        mutableStateOf(
-            if (permissionManager.isPermissionGranted()) {
-                AppStartDestination.GALLERY
-            } else {
-                AppStartDestination.PERMISSION
-            }
-        )
     }
 
     val galleryViewModel = remember {
@@ -53,8 +42,7 @@ fun AppRoot() {
         ) {
             if (permissionManager.isPermissionGranted()) {
                 galleryViewModel.loadImages()
-
-                navController.navigate(AppDestination.Gallery.route) {
+                navController.navigate(AppDestination.GalleryTabs.route) {
                     popUpTo(0)
                 }
             }
@@ -63,14 +51,14 @@ fun AppRoot() {
     NavHost(
         navController = navController,
         startDestination =
-            if (startDestination == AppStartDestination.GALLERY)
-                AppDestination.Gallery.route
+            if (permissionManager.isPermissionGranted())
+                AppDestination.GalleryTabs.route
             else
                 AppDestination.Permission.route
     ) {
 
         composable(AppDestination.Permission.route) {
-            PermissionScreen(
+            com.kdgm.lumagallery.feature.permission.PermissionScreen(
                 onRequestPermission = {
                     permissionLauncher.launch(
                         permissionManager.requiredPermissions()
@@ -79,9 +67,39 @@ fun AppRoot() {
             )
         }
 
-        composable(AppDestination.Gallery.route) {
-            GalleryScreen(
-                viewModel = galleryViewModel,
+        composable(AppDestination.GalleryTabs.route) {
+            GalleryTabsScreen(
+                galleryViewModel = galleryViewModel,
+                onImageOpen = { index ->
+                    navController.navigate(
+                        AppDestination.Viewer.createRoute(index)
+                    )
+                },
+                onAlbumOpen = { bucketId, name ->
+                    navController.navigate(
+                        AppDestination.AlbumImages.createRoute(bucketId, name)
+                    )
+                }
+            )
+        }
+
+        composable(
+            route = AppDestination.AlbumImages.route,
+            arguments = listOf(
+                navArgument("bucketId") { type = NavType.LongType },
+                navArgument("name") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+
+            val bucketId =
+                backStackEntry.arguments?.getLong("bucketId") ?: 0L
+            val name =
+                backStackEntry.arguments?.getString("name") ?: ""
+
+            AlbumImagesScreen(
+                bucketId = bucketId,
+                title = name,
+                onBack = { navController.popBackStack() },
                 onImageOpen = { index ->
                     navController.navigate(
                         AppDestination.Viewer.createRoute(index)
@@ -93,9 +111,7 @@ fun AppRoot() {
         composable(
             route = AppDestination.Viewer.route,
             arguments = listOf(
-                navArgument("index") {
-                    type = NavType.IntType
-                }
+                navArgument("index") { type = NavType.IntType }
             )
         ) { backStackEntry ->
             val index =
@@ -104,9 +120,7 @@ fun AppRoot() {
             ViewerScreen(
                 images = galleryViewModel.getImages(),
                 startIndex = index,
-                onExit = {
-                    navController.popBackStack()
-                }
+                onExit = { navController.popBackStack() }
             )
         }
     }
