@@ -5,17 +5,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavType
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
+import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.kdgm.lumagallery.core.permissions.MediaPermissionManager
 import com.kdgm.lumagallery.data.datasource.MediaStoreImageDataSource
 import com.kdgm.lumagallery.data.repository.ImageRepositoryImpl
-import com.kdgm.lumagallery.feature.gallery.GalleryTabsScreen
 import com.kdgm.lumagallery.feature.gallery.GalleryViewModel
 import com.kdgm.lumagallery.feature.viewer.ViewerScreen
-import com.kdgm.lumagallery.feature.gallery.AlbumImagesScreen
 import com.kdgm.lumagallery.ui.navigation.AppDestination
 
 @Composable
@@ -57,49 +53,9 @@ fun AppRoot() {
                 AppDestination.Permission.route
     ) {
 
-        composable(AppDestination.Permission.route) {
-            com.kdgm.lumagallery.feature.permission.PermissionScreen(
-                onRequestPermission = {
-                    permissionLauncher.launch(
-                        permissionManager.requiredPermissions()
-                    )
-                }
-            )
-        }
-
         composable(AppDestination.GalleryTabs.route) {
-            GalleryTabsScreen(
+            GalleryScaffold(
                 galleryViewModel = galleryViewModel,
-                onImageOpen = { index ->
-                    navController.navigate(
-                        AppDestination.Viewer.createRoute(index)
-                    )
-                },
-                onAlbumOpen = { bucketId, name ->
-                    navController.navigate(
-                        AppDestination.AlbumImages.createRoute(bucketId, name)
-                    )
-                }
-            )
-        }
-
-        composable(
-            route = AppDestination.AlbumImages.route,
-            arguments = listOf(
-                navArgument("bucketId") { type = NavType.LongType },
-                navArgument("name") { type = NavType.StringType }
-            )
-        ) { backStackEntry ->
-
-            val bucketId =
-                backStackEntry.arguments?.getLong("bucketId") ?: 0L
-            val name =
-                backStackEntry.arguments?.getString("name") ?: ""
-
-            AlbumImagesScreen(
-                bucketId = bucketId,
-                title = name,
-                onBack = { navController.popBackStack() },
                 onImageOpen = { index ->
                     navController.navigate(
                         AppDestination.Viewer.createRoute(index)
