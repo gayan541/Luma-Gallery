@@ -1,123 +1,142 @@
 package com.kdgm.lumagallery.feature.gallery
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTransformGestures
+import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Text
+import androidx.compose.foundation.lazy.grid.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
-import kotlinx.coroutines.launch
+import androidx.compose.ui.unit.dp
+import com.kdgm.lumagallery.core.media.ImageMedia
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
+private sealed interface GalleryUiItem {
+    data class Header(val title: String) : GalleryUiItem
+    data class Photo(
+        val image: ImageMedia,
+        val index: Int
+    ) : GalleryUiItem
+}
+
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun GalleryScreen(
     viewModel: GalleryViewModel,
     onImageOpen: (Int) -> Unit
 ) {
-
-    val gridState = rememberLazyGridState()
-    val coroutineScope = rememberCoroutineScope()
-
     val state by viewModel.uiState.collectAsState()
 
-    var zoomState by remember {
-        mutableStateOf(GridZoomState())
+    if (state.isLoading) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator()
+        }
+        return
     }
 
-    when {
-        state.isLoading -> {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator()
+    val uiItems = remember(state.images) {
+        buildUiItems(state.images)
+    }
+
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(3),
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 72.dp),
+        horizontalArrangement = Arrangement.spacedBy(1.dp),
+        verticalArrangement = Arrangement.spacedBy(1.dp)
+    ) {
+
+        items(
+            count = uiItems.size,
+            span = { index ->
+                when (uiItems[index]) {
+                    is GalleryUiItem.Header ->
+                        GridItemSpan(maxLineSpan)
+                    is GalleryUiItem.Photo ->
+                        GridItemSpan(1)
+                }
             }
-        }
+        ) { index ->
 
-        state.images.isEmpty() -> {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("No photos found")
-            }
-        }
+            when (val item = uiItems[index]) {
 
-        else -> {
-            LazyVerticalGrid(
-                state = gridState,
-                columns = GridCells.Fixed(zoomState.columns),
-                modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(Unit) {
-                        detectTransformGestures { centroid, _, zoom, _ ->
+                is GalleryUiItem.Header -> {
+                    Text(
+                        text = item.title,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                }
 
-                            val accumulatedZoom =
-                                zoomState.zoomAccumulator * zoom
-
-                            var newColumns = zoomState.columns
-
-                            if (accumulatedZoom > 1.2f) newColumns--
-                            else if (accumulatedZoom < 0.8f) newColumns++
-
-                            newColumns = newColumns.coerceIn(
-                                zoomState.minColumns,
-                                zoomState.maxColumns
-                            )
-
-                            if (newColumns != zoomState.columns) {
-
-                                val focusedIndex =
-                                    calculateFocusedIndex(
-                                        gridState,
-                                        state.images,
-                                        centroid
-                                    )
-
-                                zoomState = zoomState.copy(
-                                    columns = newColumns,
-                                    zoomAccumulator = 1f
-                                )
-
-                                if (newColumns <= 2) {
-                                    onImageOpen(focusedIndex)
-                                } else {
-                                    coroutineScope.launch {
-                                        gridState.scrollToItem(focusedIndex)
-                                    }
-                                }
-
-                            } else {
-                                zoomState = zoomState.copy(
-                                    zoomAccumulator = accumulatedZoom
-                                )
-                            }
-                        }
-                    }
-            ) {
-                items(
-                    items = state.images,
-                    key = { it.id }
-                ) { image ->
+                is GalleryUiItem.Photo -> {
                     GalleryGridItem(
-                        image = image,
-                        modifier = Modifier.clickable {
-                            onImageOpen(
-                                state.images.indexOf(image)
-                            )
+                        image = item.image,
+                        modifier = Modifier.aspectRatio(1f),
+                        onClick = {
+                            onImageOpen(item.index)
                         }
                     )
                 }
             }
         }
     }
-
-
 }
+
+@RequiresApi(Build.VERSION_CODES.O)
+private fun buildUiItems(
+    images: List<ImageMedia>
+): List<GalleryUiItem> {
+
+    val today = LocalDate.now()
+    val yesterday = today.minusDays(1)
+
+    val formatter =
+        DateTimeFormatter.ofPattern("MMM d, yyyy")
+
+    val grouped =
+        images.groupBy { image ->
+            Instant
+                .ofEpochMilli(image.dateTaken)
+                .atZone(ZoneId.systemDefault())
+                .toLocalDate()
+        }
+
+    val sortedDates =
+        grouped.keys.sortedDescending()
+
+    val items = mutableListOf<GalleryUiItem>()
+    var globalIndex = 0
+
+    for (date in sortedDates) {
+
+        val title =
+            when (date) {
+                today -> "Today"
+                yesterday -> "Yesterday"
+                else -> date.format(formatter)
+            }
+
+        items += GalleryUiItem.Header(title)
+
+        grouped[date]?.forEach { image ->
+            items += GalleryUiItem.Photo(
+                image = image,
+                index = globalIndex
+            )
+            globalIndex++
+        }
+    }
+
+    return items
+}
+
 
