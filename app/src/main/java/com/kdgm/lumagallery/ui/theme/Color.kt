@@ -14,3 +14,5 @@ val AccentBlue = Color(0xFF4C8DFF)
 val AccentRed = Color(0xFFFF5A5A)
 
 val DividerDark = Color(0xFF2A2A2C)
+
+val PhotoBorderGray = Color(0xFF2A2A2A)
