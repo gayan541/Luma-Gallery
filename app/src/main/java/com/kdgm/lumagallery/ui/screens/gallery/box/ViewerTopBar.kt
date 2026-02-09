@@ -12,7 +12,6 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
@@ -22,7 +21,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
 @Composable
-fun ViewerTopBar(onBack: () -> Unit) {
+fun ViewerTopBar(
+    onBack: () -> Unit,
+    onSlideshow: () -> Unit = {}
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -37,13 +39,17 @@ fun ViewerTopBar(onBack: () -> Unit) {
         }
 
         Row {
-            Icon(Icons.Default.Refresh, null, tint = Color.White)
-            Spacer(Modifier.width(16.dp))
-            Icon(Icons.Default.Info, null, tint = Color.White)
-            Spacer(Modifier.width(16.dp))
-            Icon(Icons.Default.PlayArrow, null, tint = Color.White)
-            Spacer(Modifier.width(16.dp))
-            Icon(Icons.Default.MoreVert, null, tint = Color.White)
+            IconButton(onClick = { /* TODO: Show info dialog */ }) {
+                Icon(Icons.Default.Info, null, tint = Color.White)
+            }
+
+            IconButton(onClick = onSlideshow) {
+                Icon(Icons.Default.PlayArrow, null, tint = Color.White)
+            }
+
+            IconButton(onClick = { /* TODO: More menu */ }) {
+                Icon(Icons.Default.MoreVert, null, tint = Color.White)
+            }
         }
     }
 }

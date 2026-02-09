@@ -69,9 +69,8 @@ fun GalleryContent(
         }
 
         if (isSelectionMode) {
-            SelectionBottomBar()
+            SelectionBottomBar(viewModel = viewModel)
         }
-        // ❌ NO GalleryBottomBar here anymore
     }
 }
 

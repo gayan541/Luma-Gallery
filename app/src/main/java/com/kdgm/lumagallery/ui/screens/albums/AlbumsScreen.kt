@@ -1,5 +1,6 @@
 package com.kdgm.lumagallery.ui.screens.albums
 
+import android.net.Uri
 import android.provider.MediaStore
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,16 +15,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import coil.compose.AsyncImage
 import com.kdgm.lumagallery.ui.screens.gallery.components.GalleryBottomBar
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 data class AlbumUiModel(
     val bucketId: Long,
     val name: String,
     val count: Int,
-    val coverUri: String
+    val coverUri: Uri
 )
 
 @Composable
@@ -63,7 +68,11 @@ fun AlbumsScreen(
                 Column(
                     modifier = Modifier
                         .clickable {
-                            // album open will be wired later
+                            val encodedName = URLEncoder.encode(
+                                album.name,
+                                StandardCharsets.UTF_8.toString()
+                            )
+                            navController.navigate("album/${album.bucketId}/$encodedName")
                         }
                 ) {
                     AsyncImage(
@@ -78,14 +87,21 @@ fun AlbumsScreen(
 
                     Spacer(modifier = Modifier.height(6.dp))
 
-                    Text(text = album.name, color = Color.White)
-                    Text(text = album.count.toString(), color = Color.Gray)
+                    Text(
+                        text = album.name,
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Text(
+                        text = "${album.count} items",
+                        color = Color.Gray,
+                        fontSize = 13.sp
+                    )
                 }
             }
         }
     }
-
-
 }
 
 private fun loadAlbums(context: android.content.Context): List<AlbumUiModel> {
@@ -118,12 +134,10 @@ private fun loadAlbums(context: android.content.Context): List<AlbumUiModel> {
             val bucketId = cursor.getLong(bucketIdCol)
             val bucketName = cursor.getString(bucketNameCol) ?: "Unknown"
 
-            val uri =
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI
-                    .buildUpon()
-                    .appendPath(imageId.toString())
-                    .build()
-                    .toString()
+            val uri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                .buildUpon()
+                .appendPath(imageId.toString())
+                .build()
 
             val existing = map[bucketId]
             if (existing == null) {
@@ -140,8 +154,6 @@ private fun loadAlbums(context: android.content.Context): List<AlbumUiModel> {
     }
 
     return map.values.toList()
-
-
 }
 
 

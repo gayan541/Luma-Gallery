@@ -17,7 +17,6 @@ import com.kdgm.lumagallery.ui.screens.viewer.PhotoViewerScreen
 @Composable
 fun AppNavGraph() {
     val navController = rememberNavController()
-
     val galleryViewModel: GalleryViewModel = viewModel()
 
     NavHost(
@@ -38,6 +37,24 @@ fun AppNavGraph() {
             )
         }
 
+        // NEW: Album photos route
+        composable(
+            route = "album/{bucketId}/{albumName}",
+            arguments = listOf(
+                navArgument("bucketId") { type = NavType.LongType },
+                navArgument("albumName") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val bucketId = backStackEntry.arguments?.getLong("bucketId") ?: 0L
+            val albumName = backStackEntry.arguments?.getString("albumName") ?: "Album"
+
+            AlbumPhotosScreen(
+                bucketId = bucketId,
+                albumName = albumName,
+                navController = navController
+            )
+        }
+
         composable(
             route = "viewer/{index}",
             arguments = listOf(navArgument("index") { type = NavType.IntType })
@@ -47,7 +64,8 @@ fun AppNavGraph() {
             PhotoViewerScreen(
                 startIndex = index,
                 viewModel = galleryViewModel,
-                onBack = { navController.popBackStack() }
+                onBack = { navController.popBackStack() },
+                onStartSlideshow = { navController.navigate("slideshow") }
             )
         }
 

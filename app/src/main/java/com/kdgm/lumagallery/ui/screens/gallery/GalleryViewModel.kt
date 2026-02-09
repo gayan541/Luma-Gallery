@@ -1,18 +1,20 @@
 package com.kdgm.lumagallery.ui.screens.gallery
 
 import android.Manifest
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import android.app.Application
+import android.app.RecoverableSecurityException
 import android.content.Context
+import android.content.IntentSender
 import android.content.pm.PackageManager
 import android.os.Build
 import android.provider.MediaStore
+import androidx.activity.result.IntentSenderRequest
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.kdgm.lumagallery.ui.screens.gallery.model.GalleryImage
 import com.kdgm.lumagallery.ui.screens.gallery.util.getDateLabel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
@@ -60,7 +62,7 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         emptyMap()
     )
 
-    private fun loadImages() = viewModelScope.launch {
+    fun loadImages() = viewModelScope.launch {
         val resolver = getApplication<Application>().contentResolver
         val result = mutableListOf<GalleryImage>()
 
@@ -114,5 +116,132 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
     fun selectAll(images: List<GalleryImage>) {
         _selectedIds.value = images.map { it.id }.toSet()
+    }
+
+    /* ---------------- Delete ---------------- */
+
+    // Store pending delete intent sender
+    private val _pendingDeleteIntentSender = MutableStateFlow<IntentSender?>(null)
+    val pendingDeleteIntentSender = _pendingDeleteIntentSender.asStateFlow()
+
+    fun deleteSelectedImages(context: Context, onNeedPermission: (IntentSender) -> Unit, onComplete: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val selectedImages = _images.value.filter {
+                    _selectedIds.value.contains(it.id)
+                }
+
+                if (selectedImages.isEmpty()) {
+                    onComplete(false)
+                    return@launch
+                }
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    // Android 11+ - Use createDeleteRequest
+                    deleteImagesModern(context, selectedImages, onNeedPermission, onComplete)
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    // Android 10 - Handle RecoverableSecurityException
+                    deleteImagesAndroid10(context, selectedImages, onNeedPermission, onComplete)
+                } else {
+                    // Android 9 and below - Direct delete
+                    deleteImagesLegacy(context, selectedImages, onComplete)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                onComplete(false)
+            }
+        }
+    }
+
+    // Android 11+ (API 30+)
+    private suspend fun deleteImagesModern(
+        context: Context,
+        images: List<GalleryImage>,
+        onNeedPermission: (IntentSender) -> Unit,
+        onComplete: (Boolean) -> Unit
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val uris = images.map { it.uri }
+            val pendingIntent = MediaStore.createDeleteRequest(
+                context.contentResolver,
+                uris
+            )
+
+            // This will trigger the system permission dialog
+            onNeedPermission(pendingIntent.intentSender)
+        }
+    }
+
+    // Android 10 (API 29)
+    private suspend fun deleteImagesAndroid10(
+        context: Context,
+        images: List<GalleryImage>,
+        onNeedPermission: (IntentSender) -> Unit,
+        onComplete: (Boolean) -> Unit
+    ) {
+        try {
+            val resolver = context.contentResolver
+            var deletedCount = 0
+
+            images.forEach { image ->
+                try {
+                    val deleted = resolver.delete(image.uri, null, null)
+                    if (deleted > 0) deletedCount++
+                } catch (securityException: SecurityException) {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        val recoverableException = securityException as? RecoverableSecurityException
+                        recoverableException?.let {
+                            onNeedPermission(it.userAction.actionIntent.intentSender)
+                            return
+                        }
+                    }
+                    throw securityException
+                }
+            }
+
+            if (deletedCount > 0) {
+                clearSelection()
+                loadImages()
+            }
+            onComplete(deletedCount > 0)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            onComplete(false)
+        }
+    }
+
+    // Android 9 and below (API 28-)
+    private suspend fun deleteImagesLegacy(
+        context: Context,
+        images: List<GalleryImage>,
+        onComplete: (Boolean) -> Unit
+    ) {
+        val resolver = context.contentResolver
+        var deletedCount = 0
+
+        images.forEach { image ->
+            val deleted = resolver.delete(image.uri, null, null)
+            if (deleted > 0) deletedCount++
+        }
+
+        if (deletedCount > 0) {
+            clearSelection()
+            loadImages()
+        }
+        onComplete(deletedCount > 0)
+    }
+
+    // Called after user grants permission
+    fun onDeletePermissionGranted() {
+        viewModelScope.launch {
+            clearSelection()
+            loadImages()
+        }
+    }
+
+    /* ---------------- Share ---------------- */
+
+    fun getSelectedImages(): List<GalleryImage> {
+        return _images.value.filter { _selectedIds.value.contains(it.id) }
     }
 }
