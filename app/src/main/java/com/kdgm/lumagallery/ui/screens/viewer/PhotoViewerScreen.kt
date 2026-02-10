@@ -1,6 +1,10 @@
 package com.kdgm.lumagallery.ui.screens.viewer
 
+import androidx.compose.ui.unit.dp
+
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -9,6 +13,7 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import com.kdgm.lumagallery.ui.screens.gallery.GalleryViewModel
@@ -36,7 +41,7 @@ fun PhotoViewerScreen(
     val scope = rememberCoroutineScope()
     var uiVisible by remember { mutableStateOf(true) }
 
-    // Auto-hide UI after 3 seconds
+    // Auto-hide UI after 3 seconds when visible
     LaunchedEffect(uiVisible) {
         if (uiVisible) {
             delay(3000)
@@ -48,35 +53,97 @@ fun PhotoViewerScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-            .pointerInput(Unit) {
-                detectTapGestures {
-                    uiVisible = !uiVisible
-                }
-            }
+            .systemBarsPadding()
     ) {
 
-        // MAIN IMAGE PAGER
+        // MAIN IMAGE PAGER with tap gesture
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = {
+                            // Toggle UI visibility on tap
+                            uiVisible = !uiVisible
+                        }
+                    )
+                }
         ) { page ->
-            ZoomableImage(images[page].uri)
+            // Pass the uiVisible state to ZoomableImage so it knows when NOT to intercept taps
+            ZoomableImage(
+                uri = images[page].uri,
+                onTap = {
+                    // This will be called when image is not zoomed
+                    uiVisible = !uiVisible
+                }
+            )
+        }
+
+        // TOP GRADIENT OVERLAY
+        AnimatedVisibility(
+            visible = uiVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.TopStart)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(120.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = 0.7f),
+                                Color.Transparent
+                            )
+                        )
+                    )
+            )
         }
 
         // TOP BAR
         AnimatedVisibility(
             visible = uiVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
             modifier = Modifier.align(Alignment.TopStart)
         ) {
             ViewerTopBar(
                 onBack = onBack,
-                onSlideshow = onStartSlideshow
+                onSlideshow = onStartSlideshow,
+                currentIndex = pagerState.currentPage,
+                totalCount = images.size
             )
         }
 
-        // BOTTOM AREA
+        // BOTTOM GRADIENT OVERLAY
         AnimatedVisibility(
             visible = uiVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.align(Alignment.BottomCenter)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(220.dp)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                Color.Black.copy(alpha = 0.8f)
+                            )
+                        )
+                    )
+            )
+        }
+
+        // BOTTOM CONTENT
+        AnimatedVisibility(
+            visible = uiVisible,
+            enter = fadeIn(),
+            exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter)
         ) {
             Column {
