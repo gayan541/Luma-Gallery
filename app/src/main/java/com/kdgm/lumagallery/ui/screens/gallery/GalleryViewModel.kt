@@ -6,17 +6,19 @@ import android.app.RecoverableSecurityException
 import android.content.Context
 import android.content.IntentSender
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
-import androidx.activity.result.IntentSenderRequest
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.kdgm.lumagallery.data.FavoritesManager
 import com.kdgm.lumagallery.ui.screens.gallery.model.GalleryImage
 import com.kdgm.lumagallery.ui.screens.gallery.util.getDateLabel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -54,7 +56,63 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
     private val _images = MutableStateFlow<List<GalleryImage>>(emptyList())
     val images = _images.asStateFlow()
 
-    val groupedImages = images.map { list ->
+    /* ---------------- Sort Options ---------------- */
+
+    enum class SortOrder {
+        DATE_DESC,      // Newest first (default)
+        DATE_ASC,       // Oldest first
+        NAME_ASC,       // A-Z
+        NAME_DESC,      // Z-A
+        SIZE_DESC,      // Largest first
+        SIZE_ASC        // Smallest first
+    }
+
+    private val _sortOrder = MutableStateFlow(SortOrder.DATE_DESC)
+    val sortOrder = _sortOrder.asStateFlow()
+
+    fun setSortOrder(order: SortOrder) {
+        _sortOrder.value = order
+        loadImages()
+    }
+
+    /* ---------------- Favorites ---------------- */
+
+    private val favoritesManager by lazy {
+        FavoritesManager(getApplication())
+    }
+
+    private val _showFavoritesOnly = MutableStateFlow(false)
+    val showFavoritesOnly = _showFavoritesOnly.asStateFlow()
+
+    val displayedImages = combine(images, showFavoritesOnly) { allImages, favoritesOnly ->
+        if (favoritesOnly) {
+            val favorites = favoritesManager.getFavorites()
+            allImages.filter { favorites.contains(it.id) }
+        } else {
+            allImages
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun toggleFavorite(imageId: Long) {
+        favoritesManager.toggleFavorite(imageId)
+        // Trigger UI update if showing favorites
+        if (_showFavoritesOnly.value) {
+            _showFavoritesOnly.value = false
+            _showFavoritesOnly.value = true
+        }
+    }
+
+    fun isFavorite(imageId: Long): Boolean {
+        return favoritesManager.isFavorite(imageId)
+    }
+
+    fun toggleShowFavoritesOnly() {
+        _showFavoritesOnly.value = !_showFavoritesOnly.value
+    }
+
+    /* ---------------- Grouped Images ---------------- */
+
+    val groupedImages = displayedImages.map { list ->
         list.groupBy { getDateLabel(it.dateTaken) }
     }.stateIn(
         viewModelScope,
@@ -66,6 +124,15 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         val resolver = getApplication<Application>().contentResolver
         val result = mutableListOf<GalleryImage>()
 
+        val sortOrderString = when (_sortOrder.value) {
+            SortOrder.DATE_DESC -> "${MediaStore.Images.Media.DATE_TAKEN} DESC"
+            SortOrder.DATE_ASC -> "${MediaStore.Images.Media.DATE_TAKEN} ASC"
+            SortOrder.NAME_ASC -> "${MediaStore.Images.Media.DISPLAY_NAME} ASC"
+            SortOrder.NAME_DESC -> "${MediaStore.Images.Media.DISPLAY_NAME} DESC"
+            SortOrder.SIZE_DESC -> "${MediaStore.Images.Media.SIZE} DESC"
+            SortOrder.SIZE_ASC -> "${MediaStore.Images.Media.SIZE} ASC"
+        }
+
         resolver.query(
             MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
             arrayOf(
@@ -74,7 +141,7 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
             ),
             null,
             null,
-            "${MediaStore.Images.Media.DATE_TAKEN} DESC"
+            sortOrderString
         )?.use { cursor ->
             val idCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media._ID)
             val dateCol = cursor.getColumnIndexOrThrow(MediaStore.Images.Media.DATE_TAKEN)
@@ -118,13 +185,13 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
         _selectedIds.value = images.map { it.id }.toSet()
     }
 
-    /* ---------------- Delete ---------------- */
+    /* ---------------- Delete (Multiple) ---------------- */
 
-    // Store pending delete intent sender
-    private val _pendingDeleteIntentSender = MutableStateFlow<IntentSender?>(null)
-    val pendingDeleteIntentSender = _pendingDeleteIntentSender.asStateFlow()
-
-    fun deleteSelectedImages(context: Context, onNeedPermission: (IntentSender) -> Unit, onComplete: (Boolean) -> Unit) {
+    fun deleteSelectedImages(
+        context: Context,
+        onNeedPermission: (IntentSender) -> Unit,
+        onComplete: (Boolean) -> Unit
+    ) {
         viewModelScope.launch {
             try {
                 val selectedImages = _images.value.filter {
@@ -137,19 +204,94 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                 }
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    // Android 11+ - Use createDeleteRequest
                     deleteImagesModern(context, selectedImages, onNeedPermission, onComplete)
                 } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    // Android 10 - Handle RecoverableSecurityException
                     deleteImagesAndroid10(context, selectedImages, onNeedPermission, onComplete)
                 } else {
-                    // Android 9 and below - Direct delete
                     deleteImagesLegacy(context, selectedImages, onComplete)
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
                 onComplete(false)
             }
+        }
+    }
+
+    /* ---------------- Delete Single Image (NEW) ---------------- */
+
+    fun deleteSingleImage(
+        context: Context,
+        imageUri: Uri,
+        onNeedPermission: (IntentSender) -> Unit,
+        onComplete: (Boolean) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    // Android 11+
+                    val pendingIntent = MediaStore.createDeleteRequest(
+                        context.contentResolver,
+                        listOf(imageUri)
+                    )
+                    onNeedPermission(pendingIntent.intentSender)
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    // Android 10
+                    deleteSingleImageAndroid10(context, imageUri, onNeedPermission, onComplete)
+                } else {
+                    // Android 9 and below
+                    deleteSingleImageLegacy(context, imageUri, onComplete)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+                onComplete(false)
+            }
+        }
+    }
+
+    private suspend fun deleteSingleImageAndroid10(
+        context: Context,
+        imageUri: Uri,
+        onNeedPermission: (IntentSender) -> Unit,
+        onComplete: (Boolean) -> Unit
+    ) {
+        try {
+            val resolver = context.contentResolver
+            val deleted = resolver.delete(imageUri, null, null)
+
+            if (deleted > 0) {
+                loadImages()
+                onComplete(true)
+            } else {
+                onComplete(false)
+            }
+        } catch (securityException: SecurityException) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val recoverableException = securityException as? RecoverableSecurityException
+                recoverableException?.let {
+                    onNeedPermission(it.userAction.actionIntent.intentSender)
+                    return
+                }
+            }
+            throw securityException
+        } catch (e: Exception) {
+            e.printStackTrace()
+            onComplete(false)
+        }
+    }
+
+    private suspend fun deleteSingleImageLegacy(
+        context: Context,
+        imageUri: Uri,
+        onComplete: (Boolean) -> Unit
+    ) {
+        val resolver = context.contentResolver
+        val deleted = resolver.delete(imageUri, null, null)
+
+        if (deleted > 0) {
+            loadImages()
+            onComplete(true)
+        } else {
+            onComplete(false)
         }
     }
 
@@ -166,8 +308,6 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
                 context.contentResolver,
                 uris
             )
-
-            // This will trigger the system permission dialog
             onNeedPermission(pendingIntent.intentSender)
         }
     }
@@ -243,5 +383,26 @@ class GalleryViewModel(application: Application) : AndroidViewModel(application)
 
     fun getSelectedImages(): List<GalleryImage> {
         return _images.value.filter { _selectedIds.value.contains(it.id) }
+    }
+
+    /* ---------------- Grid Size ---------------- */
+
+    private val _gridColumns = MutableStateFlow(3)
+    val gridColumns = _gridColumns.asStateFlow()
+
+    fun setGridColumns(columns: Int) {
+        _gridColumns.value = columns.coerceIn(2, 5)
+    }
+
+    fun increaseGridSize() {
+        if (_gridColumns.value > 2) {
+            _gridColumns.value--
+        }
+    }
+
+    fun decreaseGridSize() {
+        if (_gridColumns.value < 5) {
+            _gridColumns.value++
+        }
     }
 }

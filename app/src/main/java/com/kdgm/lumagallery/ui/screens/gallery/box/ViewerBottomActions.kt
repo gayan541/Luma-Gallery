@@ -3,6 +3,9 @@ package com.kdgm.lumagallery.ui.screens.gallery.box
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Delete
@@ -20,13 +23,30 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kdgm.lumagallery.ui.screens.gallery.GalleryViewModel
 import com.kdgm.lumagallery.ui.screens.gallery.model.GalleryImage
 
 @Composable
 fun ViewerBottomActions(
-    currentImage: GalleryImage? = null
+    currentImage: GalleryImage? = null,
+    viewModel: GalleryViewModel? = null,
+    onDeleteComplete: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
+
+    // Permission launcher for delete
+    val deletePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            viewModel?.loadImages()
+            Toast.makeText(context, "Image deleted", Toast.LENGTH_SHORT).show()
+            onDeleteComplete(true)
+        } else {
+            Toast.makeText(context, "Delete cancelled", Toast.LENGTH_SHORT).show()
+            onDeleteComplete(false)
+        }
+    }
 
     Row(
         modifier = Modifier
@@ -48,7 +68,7 @@ fun ViewerBottomActions(
             icon = { Icon(Icons.Outlined.Edit, null, tint = Color.White) },
             label = "Edit",
             onClick = {
-                Toast.makeText(context, "Edit (coming soon)", Toast.LENGTH_SHORT).show()
+                currentImage?.let { openImageEditor(context, it) }
             }
         )
 
@@ -64,7 +84,22 @@ fun ViewerBottomActions(
             icon = { Icon(Icons.Outlined.Delete, null, tint = Color.White) },
             label = "Delete",
             onClick = {
-                Toast.makeText(context, "Delete (coming soon)", Toast.LENGTH_SHORT).show()
+                currentImage?.let { image ->
+                    viewModel?.let { vm ->
+                        // Use the new single image delete - NO SELECTION NEEDED
+                        vm.deleteSingleImage(
+                            context = context,
+                            imageUri = image.uri,
+                            onNeedPermission = { intentSender ->
+                                val request = IntentSenderRequest.Builder(intentSender).build()
+                                deletePermissionLauncher.launch(request)
+                            },
+                            onComplete = { success ->
+                                onDeleteComplete(success)
+                            }
+                        )
+                    }
+                }
             }
         )
     }
@@ -100,4 +135,16 @@ private fun shareImage(context: Context, image: GalleryImage) {
         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
     }
     context.startActivity(Intent.createChooser(shareIntent, "Share image via"))
+}
+
+private fun openImageEditor(context: Context, image: GalleryImage) {
+    try {
+        val intent = Intent(Intent.ACTION_EDIT).apply {
+            setDataAndType(image.uri, "image/*")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(Intent.createChooser(intent, "Edit with"))
+    } catch (e: Exception) {
+        Toast.makeText(context, "No image editor found", Toast.LENGTH_SHORT).show()
+    }
 }
